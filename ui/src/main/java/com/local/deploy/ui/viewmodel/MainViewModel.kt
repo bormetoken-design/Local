@@ -17,6 +17,7 @@ import com.local.deploy.model.RuntimeType
 import com.local.deploy.model.SystemHealthReport
 import com.local.deploy.packages.PackageManager
 import com.local.deploy.packages.PackageIndexRepository
+import com.local.deploy.packages.InstallProgress
 import com.local.deploy.projects.detector.DetectionResult
 import com.local.deploy.projects.detector.ProjectDetector
 import com.local.deploy.projects.env.EnvManager
@@ -64,7 +65,9 @@ data class MainUiState(
     val isAutoBackupEnabled: Boolean = false,
     val activeDetectionResult: DetectionResult? = null,
     val autoDeployState: AutoDeployState = AutoDeployState(),
-    val runtimeIndexUrl: String = PackageIndexRepository.DEFAULT_INDEX_URL
+    val runtimeIndexUrl: String = PackageIndexRepository.DEFAULT_INDEX_URL,
+    val packageErrorMessage: String? = null,
+    val packageInstallStage: String? = null
 )
 
 class MainViewModel(
@@ -117,7 +120,14 @@ class MainViewModel(
     fun installPackageFromFile(context: Context, uri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
             val fileName = SafImportHelper.getDisplayName(context, uri)
-            _uiState.update { it.copy(isInstallingPackageId = "local_file", installProgressPercent = 10) }
+            _uiState.update {
+                it.copy(
+                    isInstallingPackageId = "local_file",
+                    installProgressPercent = 5,
+                    packageInstallStage = "Reading archive...",
+                    packageErrorMessage = null
+                )
+            }
             try {
                 val tempArchive = File(packageManager.cacheDir, "manual_${System.currentTimeMillis()}_$fileName")
                 context.contentResolver.openInputStream(uri)?.use { input ->
@@ -126,13 +136,29 @@ class MainViewModel(
                     }
                 }
                 packageManager.installPackageArchive(tempArchive, null) { ip ->
-                    _uiState.update { it.copy(installProgressPercent = ip.progressPercent) }
+                    _uiState.update {
+                        it.copy(
+                            installProgressPercent = ip.progressPercent,
+                            packageInstallStage = ip.stage
+                        )
+                    }
                 }
                 tempArchive.delete()
                 loadRuntimePackages()
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        packageErrorMessage = "Failed to install from file '$fileName': ${e.message ?: "Unknown error"}"
+                    )
+                }
             } finally {
-                _uiState.update { it.copy(isInstallingPackageId = null, installProgressPercent = 0) }
+                _uiState.update {
+                    it.copy(
+                        isInstallingPackageId = null,
+                        installProgressPercent = 0,
+                        packageInstallStage = null
+                    )
+                }
             }
         }
     }
@@ -563,16 +589,69 @@ class MainViewModel(
 
     fun installRuntimePackage(pkg: RuntimePackage) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isInstallingPackageId = pkg.id, installProgressPercent = 10) }
+            _uiState.update {
+                it.copy(
+                    isInstallingPackageId = pkg.id,
+                    installProgressPercent = 5,
+                    packageInstallStage = "Preparing installation...",
+                    packageErrorMessage = null
+                )
+            }
             try {
-                for (p in 20..100 step 20) {
-                    kotlinx.coroutines.delay(200)
-                    _uiState.update { it.copy(installProgressPercent = p) }
-                }
+                packageManager.installPackage(
+                    pkg = pkg,
+                    localArchive = null,
+                    onProgress = { progress ->
+                        _uiState.update {
+                            it.copy(
+                                installProgressPercent = progress.progressPercent,
+                                packageInstallStage = progress.stage
+                            )
+                        }
+                    }
+                )
                 loadRuntimePackages()
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        packageErrorMessage = "Failed to install ${pkg.name}: ${e.message ?: "Unknown error"}"
+                    )
+                }
             } finally {
-                _uiState.update { it.copy(isInstallingPackageId = null, installProgressPercent = 0) }
+                _uiState.update {
+                    it.copy(
+                        isInstallingPackageId = null,
+                        installProgressPercent = 0,
+                        packageInstallStage = null
+                    )
+                }
             }
         }
     }
+
+    fun uninstallRuntimePackage(pkg: RuntimePackage) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(packageErrorMessage = null) }
+            try {
+                packageManager.uninstallPackage(pkg)
+                loadRuntimePackages()
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        packageErrorMessage = "Failed to uninstall ${pkg.name}: ${e.message ?: "Unknown error"}"
+                    )
+                }
+            }
+        }
+    }
+
+    fun updateRuntimePackage(pkg: RuntimePackage) {
+        installRuntimePackage(pkg)
+    }
+
+    fun clearPackageError() {
+        _uiState.update { it.copy(packageErrorMessage = null) }
+    }
+
+    fun getDeviceAbi(): String = packageManager.detectDeviceAbi()
 }

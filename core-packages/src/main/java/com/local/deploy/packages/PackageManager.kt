@@ -297,6 +297,23 @@ class PackageManager(
         return if (binaryFile.exists()) binaryFile.delete() else false
     }
 
+    /**
+     * Uninstalls all binaries provided by the given package.
+     */
+    fun uninstallPackage(pkg: RuntimePackage): Boolean {
+        val binaries = pkg.provides.ifEmpty { listOf(pkg.id) }
+        var anyDeleted = false
+        for (bin in binaries) {
+            val binaryFile = File(binDir, bin)
+            if (binaryFile.exists()) {
+                if (binaryFile.delete()) {
+                    anyDeleted = true
+                }
+            }
+        }
+        return anyDeleted
+    }
+
     fun isBinaryInstalled(binaryName: String): Boolean {
         val file = File(binDir, binaryName)
         return file.exists() && file.canExecute()

@@ -37,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import com.local.deploy.model.RuntimePackage
 import com.local.deploy.model.RuntimeType
 import com.local.deploy.ui.theme.PrimaryBlue
@@ -49,6 +50,9 @@ fun RuntimesScreen(
     deviceAbi: String,
     installingPackageId: String? = null,
     installProgressPercent: Int = 0,
+    installStage: String? = null,
+    errorMessage: String? = null,
+    onDismissError: () -> Unit = {},
     onInstallPackage: (RuntimePackage) -> Unit,
     onUninstallPackage: (RuntimePackage) -> Unit,
     onUpdatePackage: (RuntimePackage) -> Unit,
@@ -143,8 +147,13 @@ fun RuntimesScreen(
                             }
 
                             if (pkg.isInstalled) {
+                                val label = if (!pkg.installedVersion.isNullOrBlank()) {
+                                    "Installed (${pkg.installedVersion})"
+                                } else {
+                                    "Installed"
+                                }
                                 Text(
-                                    text = "Installed",
+                                    text = label,
                                     color = StatusRunning,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold
@@ -160,8 +169,13 @@ fun RuntimesScreen(
                                 color = PrimaryBlue
                             )
                             Spacer(modifier = Modifier.height(4.dp))
+                            val displayStage = if (!installStage.isNullOrBlank()) {
+                                "$installStage ($installProgressPercent%)"
+                            } else {
+                                "Installing: $installProgressPercent%"
+                            }
                             Text(
-                                text = "Installing: $installProgressPercent%",
+                                text = displayStage,
                                 fontSize = 12.sp,
                                 color = PrimaryBlue
                             )
@@ -207,6 +221,43 @@ fun RuntimesScreen(
                                     Text("Install", fontSize = 12.sp)
                                 }
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!errorMessage.isNullOrBlank()) {
+            Dialog(onDismissRequest = onDismissError) {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "Installation Error",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = StatusFailed
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = errorMessage,
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Button(
+                            onClick = onDismissError,
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("Dismiss")
                         }
                     }
                 }

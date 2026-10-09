@@ -185,12 +185,15 @@ fun MainApp(
 
                     MainTab.RUNTIMES -> RuntimesScreen(
                         packages = state.runtimePackages,
-                        deviceAbi = "aarch64",
+                        deviceAbi = viewModel.getDeviceAbi(),
                         installingPackageId = state.isInstallingPackageId,
                         installProgressPercent = state.installProgressPercent,
+                        installStage = state.packageInstallStage,
+                        errorMessage = state.packageErrorMessage,
+                        onDismissError = { viewModel.clearPackageError() },
                         onInstallPackage = { viewModel.installRuntimePackage(it) },
-                        onUninstallPackage = {},
-                        onUpdatePackage = {},
+                        onUninstallPackage = { viewModel.uninstallRuntimePackage(it) },
+                        onUpdatePackage = { viewModel.updateRuntimePackage(it) },
                         onInstallFromFile = onOpenArchivePicker,
                         onRefreshIndex = { viewModel.loadRuntimePackages() },
                         modifier = Modifier.padding(paddingValues)
