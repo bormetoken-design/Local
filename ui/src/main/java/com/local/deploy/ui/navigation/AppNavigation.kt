@@ -1,5 +1,8 @@
 package com.local.deploy.ui.navigation
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
@@ -19,6 +22,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import com.local.deploy.ui.screens.deploy.RailwayDeployDialog
 import com.local.deploy.ui.screens.details.ProjectDetailScreen
 import com.local.deploy.ui.screens.health.SystemHealthScreen
 import com.local.deploy.ui.screens.onboarding.OnboardingScreen
@@ -39,14 +44,59 @@ enum class MainTab(val label: String, val icon: ImageVector) {
 @Composable
 fun MainApp(
     viewModel: MainViewModel,
-    appVersion: String = "1.0.1",
+    appVersion: String = "1.0.5",
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val state by viewModel.uiState.collectAsState()
     var selectedTab by remember { mutableStateOf(MainTab.PROJECTS) }
     var isWizardOpen by remember { mutableStateOf(false) }
 
+    // Storage Access Framework Launchers
+    val zipPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            isWizardOpen = false
+            viewModel.autoDeployFromZip(context, uri)
+        }
+    }
+
+    val folderPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            isWizardOpen = false
+            viewModel.autoDeployFromFolder(context, uri)
+        }
+    }
+
+    val onOpenZipPicker: () -> Unit = {
+        zipPickerLauncher.launch(
+            arrayOf(
+                "application/zip",
+                "application/x-zip-compressed",
+                "application/octet-stream",
+                "*/*"
+            )
+        )
+    }
+
+    val onOpenFolderPicker: () -> Unit = {
+        folderPickerLauncher.launch(null)
+    }
+
     LocalDeployTheme {
+        // Railway 1-Click Auto-Deploy Progress Dialog
+        RailwayDeployDialog(
+            state = state.autoDeployState,
+            onDismiss = { viewModel.dismissDeployDialog() },
+            onOpenProject = { projectId ->
+                viewModel.dismissDeployDialog()
+                viewModel.selectProject(projectId)
+            }
+        )
+
         if (!state.isOnboardingCompleted) {
             OnboardingScreen(
                 onRequestNotificationPermission = {},
@@ -72,8 +122,8 @@ fun MainApp(
         } else if (isWizardOpen) {
             AddProjectWizardScreen(
                 onDismiss = { isWizardOpen = false },
-                onPickFolder = {},
-                onPickZip = {},
+                onPickFolder = onOpenFolderPicker,
+                onPickZip = onOpenZipPicker,
                 onSelectTemplate = { viewModel.createProjectFromTemplate(it) },
                 detectionResult = state.activeDetectionResult,
                 onCreateAndStart = { name, cmd, port, auto, env ->
@@ -107,6 +157,8 @@ fun MainApp(
                         onOpenWeb = {},
                         onViewLogs = { viewModel.selectProject(it) },
                         onAddProjectClick = { isWizardOpen = true },
+                        onUploadZipClick = onOpenZipPicker,
+                        onUploadFolderClick = onOpenFolderPicker,
                         onHealthClick = { selectedTab = MainTab.HEALTH },
                         modifier = Modifier.padding(paddingValues)
                     )
@@ -116,7 +168,7 @@ fun MainApp(
                         deviceAbi = "aarch64",
                         installingPackageId = state.isInstallingPackageId,
                         installProgressPercent = state.installProgressPercent,
-                        onInstallPackage = {},
+                        onInstallPackage = { viewModel.installRuntimePackage(it) },
                         onUninstallPackage = {},
                         onUpdatePackage = {},
                         modifier = Modifier.padding(paddingValues)

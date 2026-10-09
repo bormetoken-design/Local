@@ -31,6 +31,8 @@ object EnvManager {
         return result
     }
 
+    fun read(file: File): Map<String, String> = parse(file)
+
     /**
      * Serializes environment variables into .env format and saves to target file.
      */

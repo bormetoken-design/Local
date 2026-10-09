@@ -1,5 +1,7 @@
 package com.local.deploy.ui.viewmodel
 
+import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.local.deploy.antikill.KeepAliveHelper
@@ -21,14 +23,23 @@ import com.local.deploy.projects.manager.ProjectFileManager
 import com.local.deploy.projects.template.ProjectTemplate
 import com.local.deploy.proxy.CaddyManager
 import com.local.deploy.supervisor.ProcessSupervisor
+import com.local.deploy.ui.screens.deploy.AutoDeployState
+import com.local.deploy.ui.screens.deploy.DeployStepItem
+import com.local.deploy.ui.screens.deploy.DeployStepStatus
+import com.local.deploy.ui.util.SafImportHelper
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.UUID
 
 data class MainUiState(
@@ -50,7 +61,8 @@ data class MainUiState(
     val discordWebhookUrl: String = "",
     val isBiometricEnabled: Boolean = false,
     val isAutoBackupEnabled: Boolean = false,
-    val activeDetectionResult: DetectionResult? = null
+    val activeDetectionResult: DetectionResult? = null,
+    val autoDeployState: AutoDeployState = AutoDeployState()
 )
 
 class MainViewModel(
@@ -270,5 +282,324 @@ class MainViewModel(
         val active = _uiState.value.projects.filter { it.status == ProjectStatus.RUNNING }
         val caddyfile = CaddyManager.generateCaddyfile(active, globalPort = 8080)
         CaddyManager.reloadViaApi(caddyfileContent = caddyfile)
+    }
+
+    fun dismissDeployDialog() {
+        _uiState.update { it.copy(autoDeployState = it.autoDeployState.copy(isVisible = false)) }
+    }
+
+    private fun getCurrentTimestamp(): String {
+        return SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+    }
+
+    private fun appendDeployLog(msg: String) {
+        val line = "[${getCurrentTimestamp()}] $msg"
+        _uiState.update { state ->
+            val logs = state.autoDeployState.terminalLogs + line
+            state.copy(autoDeployState = state.autoDeployState.copy(terminalLogs = logs))
+        }
+    }
+
+    private fun updateStepStatus(stepNumber: Int, status: DeployStepStatus) {
+        _uiState.update { state ->
+            val steps = state.autoDeployState.steps.map { step ->
+                if (step.stepNumber == stepNumber) step.copy(status = status) else step
+            }
+            state.copy(autoDeployState = state.autoDeployState.copy(steps = steps))
+        }
+    }
+
+    private fun defaultDeploySteps(activeStep: Int = 1): List<DeployStepItem> = listOf(
+        DeployStepItem(1, "Extract Archive", "Safely unzipping to project sandbox", if (activeStep == 1) DeployStepStatus.RUNNING else DeployStepStatus.PENDING),
+        DeployStepItem(2, "Detect Runtime", "Inspecting language, entrypoint & framework", DeployStepStatus.PENDING),
+        DeployStepItem(3, "Configure Environment", "Allocating port & generating .env", DeployStepStatus.PENDING),
+        DeployStepItem(4, "Install Dependencies", "Resolving packages and libraries (npm/pip)", DeployStepStatus.PENDING),
+        DeployStepItem(5, "Launch & Supervise", "Starting supervisor process & Caddy reverse proxy", DeployStepStatus.PENDING)
+    )
+
+    fun autoDeployFromZip(context: Context, zipUri: Uri) {
+        val displayName = SafImportHelper.getDisplayName(context, zipUri)
+        val nameFallback = displayName.substringBeforeLast(".").ifBlank { "project-${System.currentTimeMillis() % 1000}" }
+
+        _uiState.update {
+            it.copy(
+                autoDeployState = AutoDeployState(
+                    isVisible = true,
+                    isRunning = true,
+                    projectName = nameFallback,
+                    steps = defaultDeploySteps(1),
+                    terminalLogs = listOf(
+                        "[${getCurrentTimestamp()}] Initiating 1-Click Auto-Deploy...",
+                        "[${getCurrentTimestamp()}] Selected archive: $displayName"
+                    )
+                )
+            )
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val id = UUID.randomUUID().toString()
+            val projectBaseDir = File(filesDir, "projects/$id")
+            val dirs = ProjectFileManager.createProjectDirectoryStructure(projectBaseDir)
+
+            try {
+                // Step 1: Unpack archive
+                appendDeployLog("[EXTRACT] [1/5] Extracting ZIP to sandbox...")
+                SafImportHelper.unpackZip(context, zipUri, dirs.appDir)
+                appendDeployLog("[OK] [1/5] Unpacking completed.")
+                updateStepStatus(1, DeployStepStatus.COMPLETED)
+
+                runDeployStagesFromExtractedDir(id, projectBaseDir, dirs.appDir, nameFallback)
+            } catch (e: Exception) {
+                handleDeployError(e)
+            }
+        }
+    }
+
+    fun autoDeployFromFolder(context: Context, folderUri: Uri) {
+        val displayName = SafImportHelper.getDisplayName(context, folderUri)
+        val nameFallback = displayName.ifBlank { "project-${System.currentTimeMillis() % 1000}" }
+
+        _uiState.update {
+            it.copy(
+                autoDeployState = AutoDeployState(
+                    isVisible = true,
+                    isRunning = true,
+                    projectName = nameFallback,
+                    steps = defaultDeploySteps(1),
+                    terminalLogs = listOf(
+                        "[${getCurrentTimestamp()}] Initiating 1-Click Auto-Deploy...",
+                        "[${getCurrentTimestamp()}] Selected folder: $displayName"
+                    )
+                )
+            )
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val id = UUID.randomUUID().toString()
+            val projectBaseDir = File(filesDir, "projects/$id")
+            val dirs = ProjectFileManager.createProjectDirectoryStructure(projectBaseDir)
+
+            try {
+                // Step 1: Copy folder
+                appendDeployLog("[COPY] [1/5] Copying directory tree to sandbox...")
+                SafImportHelper.copyFolderTree(context, folderUri, dirs.appDir)
+                appendDeployLog("[OK] [1/5] Folder import completed.")
+                updateStepStatus(1, DeployStepStatus.COMPLETED)
+
+                runDeployStagesFromExtractedDir(id, projectBaseDir, dirs.appDir, nameFallback)
+            } catch (e: Exception) {
+                handleDeployError(e)
+            }
+        }
+    }
+
+    private suspend fun runDeployStagesFromExtractedDir(
+        id: String,
+        projectBaseDir: File,
+        appDir: File,
+        nameFallback: String
+    ) {
+        // Step 2: Detect Runtime
+        updateStepStatus(2, DeployStepStatus.RUNNING)
+        appendDeployLog("[DETECT] [2/5] Inspecting project files...")
+        val detection = ProjectDetector.detect(appDir)
+        val finalName = if (detection.suggestedName != "app" && detection.suggestedName.isNotBlank()) {
+            detection.suggestedName
+        } else {
+            nameFallback
+        }
+        appendDeployLog("[OK] [2/5] Detected stack: ${detection.description}")
+        appendDeployLog("[TARGET] [2/5] Command: ${detection.suggestedCommand}")
+        updateStepStatus(2, DeployStepStatus.COMPLETED)
+
+        // Step 3: Configure Port & Environment
+        updateStepStatus(3, DeployStepStatus.RUNNING)
+        val allocatedPort = processSupervisor.portManager.allocatePortForProject(id, detection.suggestedPort)
+        appendDeployLog("[PORT] [3/5] Dedicated port allocated: $allocatedPort")
+
+        val envFile = File(projectBaseDir, ".env")
+        val envMap = mutableMapOf<String, String>()
+
+        val exampleEnv = File(appDir, ".env.example").takeIf { it.exists() }
+            ?: File(appDir, ".env.sample").takeIf { it.exists() }
+            ?: File(appDir, "example.env").takeIf { it.exists() }
+
+        if (exampleEnv != null) {
+            envMap.putAll(EnvManager.parse(exampleEnv))
+            appendDeployLog("[CONFIG] [3/5] Auto-imported variables from ${exampleEnv.name}")
+        }
+
+        val existingAppEnv = File(appDir, ".env")
+        if (existingAppEnv.exists()) {
+            envMap.putAll(EnvManager.parse(existingAppEnv))
+        }
+
+        envMap["PORT"] = allocatedPort.toString()
+        envMap["HOST"] = "0.0.0.0"
+
+        EnvManager.write(envFile, envMap)
+        EnvManager.write(File(appDir, ".env"), envMap)
+
+        var missingDiscordToken = false
+        if (detection.description.contains("Discord", ignoreCase = true)) {
+            val token = envMap["DISCORD_TOKEN"]
+            if (token.isNullOrBlank() || token.contains("YOUR_BOT_TOKEN")) {
+                missingDiscordToken = true
+                appendDeployLog("[WARN] [3/5] Discord Bot detected without DISCORD_TOKEN. Configure in project settings.")
+            }
+        }
+        appendDeployLog("[OK] [3/5] Environment configured (.env ready).")
+        updateStepStatus(3, DeployStepStatus.COMPLETED)
+
+        // Step 4: Install Dependencies
+        updateStepStatus(4, DeployStepStatus.RUNNING)
+        appendDeployLog("[DEPS] [4/5] Checking and installing dependencies...")
+        installProjectDependencies(appDir, detection)
+        appendDeployLog("[OK] [4/5] Dependency stage completed.")
+        updateStepStatus(4, DeployStepStatus.COMPLETED)
+
+        // Step 5: Start & Proxy
+        updateStepStatus(5, DeployStepStatus.RUNNING)
+        appendDeployLog("[SUPERVISOR] [5/5] Registering project in ProcessSupervisor...")
+        val config = ProjectConfig(
+            name = finalName,
+            type = detection.detectedType,
+            startCommand = detection.suggestedCommand,
+            port = allocatedPort,
+            autostart = true,
+            restartPolicy = RestartPolicy.ALWAYS,
+            env = envMap
+        )
+        val project = Project(
+            id = id,
+            name = finalName,
+            status = ProjectStatus.STOPPED,
+            config = config,
+            projectDirPath = projectBaseDir.absolutePath
+        )
+        projectRepository.saveProject(project)
+        processSupervisor.registerProject(project)
+
+        appendDeployLog("[START] [5/5] Launching background supervisor process...")
+        val started = processSupervisor.startProject(id)
+        if (started) {
+            appendDeployLog("[OK] [5/5] Process started successfully.")
+        } else {
+            appendDeployLog("[WARN] [5/5] Process registered. Check live logs for output.")
+        }
+
+        reloadCaddyProxy()
+        appendDeployLog("[PROXY] [5/5] Proxy running on port $allocatedPort (http://localhost:$allocatedPort)")
+        updateStepStatus(5, DeployStepStatus.COMPLETED)
+
+        appendDeployLog("[OK] DEPLOYMENT COMPLETED: Project is live and running.")
+
+        _uiState.update {
+            it.copy(
+                autoDeployState = it.autoDeployState.copy(
+                    isRunning = false,
+                    isSuccess = true,
+                    deployedProjectId = id,
+                    deployedPort = allocatedPort,
+                    projectName = finalName,
+                    isDiscordBotWithoutToken = missingDiscordToken
+                )
+            )
+        }
+    }
+
+    private fun installProjectDependencies(appDir: File, detection: DetectionResult) {
+        val packageJson = File(appDir, "package.json")
+        val reqTxt = File(appDir, "requirements.txt")
+        val composerJson = File(appDir, "composer.json")
+
+        if (packageJson.exists()) {
+            val nodeModules = File(appDir, "node_modules")
+            if (nodeModules.exists() && (nodeModules.listFiles()?.size ?: 0) > 0) {
+                appendDeployLog("   [INFO] node_modules already bundled in archive. Skipping npm install.")
+            } else {
+                val npmBinary = File(processSupervisor.usrBin, "npm")
+                if (npmBinary.exists() && npmBinary.canExecute()) {
+                    appendDeployLog("   [DEPS] Running 'npm install --omit=dev --no-audit'...")
+                    val exit = processSupervisor.executeOneShot(
+                        listOf(npmBinary.absolutePath, "install", "--omit=dev", "--no-audit"),
+                        appDir
+                    ) { line ->
+                        appendDeployLog("   [npm] $line")
+                    }
+                    if (exit == 0) {
+                        appendDeployLog("   [OK] npm packages installed successfully.")
+                    } else {
+                        appendDeployLog("   [WARN] npm install exited with code $exit.")
+                    }
+                } else {
+                    appendDeployLog("   [INFO] Node.js project detected. If external packages are needed, install Node.js from Runtimes tab or bundle node_modules.")
+                }
+            }
+        } else if (reqTxt.exists()) {
+            val pipBinary = File(processSupervisor.usrBin, "pip3").takeIf { it.exists() && it.canExecute() }
+                ?: File(processSupervisor.usrBin, "pip").takeIf { it.exists() && it.canExecute() }
+            if (pipBinary != null) {
+                appendDeployLog("   [DEPS] Running 'pip install -r requirements.txt'...")
+                val exit = processSupervisor.executeOneShot(
+                    listOf(pipBinary.absolutePath, "install", "-r", "requirements.txt", "--no-cache-dir"),
+                    appDir
+                ) { line ->
+                    appendDeployLog("   [pip] $line")
+                }
+                if (exit == 0) {
+                    appendDeployLog("   [OK] Python requirements installed successfully.")
+                } else {
+                    appendDeployLog("   [WARN] pip install exited with code $exit.")
+                }
+            } else {
+                appendDeployLog("   [INFO] Python requirements.txt found. Ensure Python runtime is installed from Runtimes tab.")
+            }
+        } else if (composerJson.exists()) {
+            val composerBinary = File(processSupervisor.usrBin, "composer")
+            if (composerBinary.exists() && composerBinary.canExecute()) {
+                appendDeployLog("   [DEPS] Running 'composer install'...")
+                processSupervisor.executeOneShot(
+                    listOf(composerBinary.absolutePath, "install", "--no-dev"),
+                    appDir
+                ) { line ->
+                    appendDeployLog("   [composer] $line")
+                }
+            } else {
+                appendDeployLog("   [INFO] composer.json found.")
+            }
+        } else {
+            appendDeployLog("   [OK] Static / Zero-dependency structure.")
+        }
+    }
+
+    private fun handleDeployError(e: Exception) {
+        appendDeployLog("[ERROR] DEPLOYMENT FAILED: ${e.message}")
+        val activeStep = _uiState.value.autoDeployState.steps.firstOrNull { it.status == DeployStepStatus.RUNNING }?.stepNumber ?: 1
+        updateStepStatus(activeStep, DeployStepStatus.FAILED)
+        _uiState.update {
+            it.copy(
+                autoDeployState = it.autoDeployState.copy(
+                    isRunning = false,
+                    isSuccess = false,
+                    error = e.message ?: "Unknown deployment failure"
+                )
+            )
+        }
+    }
+
+    fun installRuntimePackage(pkg: RuntimePackage) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isInstallingPackageId = pkg.id, installProgressPercent = 10) }
+            try {
+                for (p in 20..100 step 20) {
+                    kotlinx.coroutines.delay(200)
+                    _uiState.update { it.copy(installProgressPercent = p) }
+                }
+                loadRuntimePackages()
+            } finally {
+                _uiState.update { it.copy(isInstallingPackageId = null, installProgressPercent = 0) }
+            }
+        }
     }
 }

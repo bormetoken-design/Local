@@ -23,16 +23,16 @@ import java.util.concurrent.TimeUnit
 
 class ProcessSupervisor(
     private val filesDir: File,
-    private val portManager: PortManager = PortManager(),
+    val portManager: PortManager = PortManager(),
     private val procStatReader: ProcStatReader = ProcStatReader(),
     private val healthChecker: HealthChecker = HealthChecker(),
     private val watchdog: Watchdog = Watchdog(),
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + Job())
 ) {
-    private val usrBin = File(filesDir, "usr/bin")
-    private val usrLib = File(filesDir, "usr/lib")
-    private val homeDir = File(filesDir, "home").apply { mkdirs() }
-    private val cacheDir = File(filesDir, "cache").apply { mkdirs() }
+    val usrBin = File(filesDir, "usr/bin")
+    val usrLib = File(filesDir, "usr/lib")
+    val homeDir = File(filesDir, "home").apply { mkdirs() }
+    val cacheDir = File(filesDir, "cache").apply { mkdirs() }
 
     private val runningProcesses = ConcurrentHashMap<String, Process>()
     private val logRotators = ConcurrentHashMap<String, LogRotator>()
@@ -62,6 +62,33 @@ class ProcessSupervisor(
             val proj = _projects.value[projectId]
             val dir = if (proj != null) File(proj.projectDirPath, "logs") else File(filesDir, "projects/$projectId/logs")
             LogRotator(dir)
+        }
+    }
+
+    fun executeOneShot(
+        command: List<String>,
+        workingDir: File,
+        onOutputLine: (String) -> Unit
+    ): Int {
+        return try {
+            val pb = ProcessBuilder(command)
+            pb.directory(workingDir)
+            pb.redirectErrorStream(true)
+            val env = pb.environment()
+            val existingPath = System.getenv("PATH") ?: "/system/bin"
+            env["PATH"] = "${usrBin.absolutePath}:$existingPath"
+            env["LD_LIBRARY_PATH"] = usrLib.absolutePath
+            env["HOME"] = homeDir.absolutePath
+            env["TMPDIR"] = cacheDir.absolutePath
+
+            val process = pb.start()
+            process.inputStream.bufferedReader().useLines { lines ->
+                lines.forEach { onOutputLine(it) }
+            }
+            process.waitFor()
+        } catch (e: Exception) {
+            onOutputLine("Execution error: ${e.message}")
+            -1
         }
     }
 
