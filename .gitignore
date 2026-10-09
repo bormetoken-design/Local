@@ -9,4 +9,5 @@ captures
 .externalNativeBuild
 .cxx
 *.apk
+!release/*.apk
 *.aab
