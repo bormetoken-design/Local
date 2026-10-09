@@ -93,4 +93,95 @@ object CaddyManager {
             false
         }
     }
+
+    /**
+     * Checks if Caddy admin API is responsive.
+     */
+    fun isApiRunning(adminApiUrl: String = "http://127.0.0.1:2019/config/"): Boolean {
+        return try {
+            val url = URL(adminApiUrl)
+            val conn = url.openConnection() as HttpURLConnection
+            conn.connectTimeout = 800
+            conn.readTimeout = 800
+            conn.requestMethod = "GET"
+            val code = conn.responseCode
+            conn.disconnect()
+            code in 200..299
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Starts the Caddy server process in the background.
+     */
+    fun startCaddyProcess(
+        caddyBinary: File,
+        caddyfile: File,
+        workingDir: File,
+        env: Map<String, String> = emptyMap()
+    ): Process {
+        workingDir.mkdirs()
+        val pb = ProcessBuilder(
+            caddyBinary.absolutePath,
+            "run",
+            "--config",
+            caddyfile.absolutePath,
+            "--adapter",
+            "caddyfile"
+        )
+        pb.directory(workingDir)
+        pb.redirectErrorStream(true)
+        val processEnv = pb.environment()
+        env.forEach { (k, v) -> processEnv[k] = v }
+        return pb.start()
+    }
+
+    /**
+     * Reloads Caddy configuration using CLI command as a fallback.
+     */
+    fun reloadViaCli(
+        caddyBinary: File,
+        caddyfile: File,
+        env: Map<String, String> = emptyMap()
+    ): Boolean {
+        if (!caddyBinary.exists() || !caddyfile.exists()) return false
+        return try {
+            val pb = ProcessBuilder(
+                caddyBinary.absolutePath,
+                "reload",
+                "--config",
+                caddyfile.absolutePath,
+                "--adapter",
+                "caddyfile"
+            )
+            pb.directory(caddyfile.parentFile ?: caddyBinary.parentFile)
+            pb.redirectErrorStream(true)
+            val processEnv = pb.environment()
+            env.forEach { (k, v) -> processEnv[k] = v }
+            val process = pb.start()
+            val completed = process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
+            completed && process.exitValue() == 0
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Stops the Caddy process cleanly.
+     */
+    fun stopCaddyProcess(caddyProcess: Process?) {
+        try {
+            caddyProcess?.destroy()
+        } catch (_: Exception) {}
+        try {
+            val url = URL("http://127.0.0.1:2019/stop")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.connectTimeout = 1000
+            conn.readTimeout = 1000
+            conn.responseCode
+            conn.disconnect()
+        } catch (_: Exception) {}
+    }
 }

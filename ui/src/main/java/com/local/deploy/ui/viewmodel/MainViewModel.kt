@@ -67,7 +67,8 @@ data class MainUiState(
     val autoDeployState: AutoDeployState = AutoDeployState(),
     val runtimeIndexUrl: String = PackageIndexRepository.DEFAULT_INDEX_URL,
     val packageErrorMessage: String? = null,
-    val packageInstallStage: String? = null
+    val packageInstallStage: String? = null,
+    val caddyStatusMessage: String? = null
 )
 
 class MainViewModel(
@@ -78,6 +79,7 @@ class MainViewModel(
 ) : ViewModel() {
 
     private val packageIndexRepository = PackageIndexRepository(filesDir, packageManager)
+    private var managedCaddyProcess: Process? = null
 
     private val _uiState = MutableStateFlow(MainUiState(runtimeIndexUrl = packageIndexRepository.getIndexUrl()))
     val uiState: StateFlow<MainUiState> = combine(
@@ -278,9 +280,51 @@ class MainViewModel(
     }
 
     private fun reloadCaddyProxy() {
-        val active = _uiState.value.projects.filter { it.status == ProjectStatus.RUNNING }
-        val caddyfile = CaddyManager.generateCaddyfile(active, globalPort = 8080)
-        CaddyManager.reloadViaApi(caddyfileContent = caddyfile)
+        val isCaddyInstalled = packageManager.isBinaryInstalled("caddy")
+        if (!isCaddyInstalled) {
+            val msg = "Caddy reverse proxy is not installed. Access web projects directly via their internal port (http://localhost:<port>). To enable reverse proxy, install Caddy from Runtimes tab."
+            _uiState.update { it.copy(caddyStatusMessage = msg) }
+            return
+        }
+
+        _uiState.update { it.copy(caddyStatusMessage = null) }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val active = _uiState.value.projects.filter { it.status == ProjectStatus.RUNNING }
+                val caddyfileContent = CaddyManager.generateCaddyfile(active, globalPort = 8080)
+                val caddyDir = File(filesDir, "services/caddy").apply { mkdirs() }
+                val caddyfileFile = File(caddyDir, "Caddyfile")
+                CaddyManager.saveCaddyfile(caddyfileFile, caddyfileContent)
+
+                val caddyBinary = File(packageManager.binDir, "caddy")
+                val env = mapOf(
+                    "PATH" to "${packageManager.binDir.absolutePath}:${System.getenv("PATH") ?: "/system/bin"}",
+                    "LD_LIBRARY_PATH" to packageManager.libDir.absolutePath,
+                    "HOME" to File(filesDir, "home").apply { mkdirs() }.absolutePath,
+                    "TMPDIR" to packageManager.cacheDir.absolutePath
+                )
+
+                val isAlive = managedCaddyProcess?.isAlive == true || CaddyManager.isApiRunning()
+                if (!isAlive) {
+                    managedCaddyProcess = CaddyManager.startCaddyProcess(
+                        caddyBinary = caddyBinary,
+                        caddyfile = caddyfileFile,
+                        workingDir = caddyDir,
+                        env = env
+                    )
+                } else {
+                    val reloaded = CaddyManager.reloadViaApi(caddyfileContent = caddyfileContent)
+                    if (!reloaded) {
+                        CaddyManager.reloadViaCli(caddyBinary, caddyfileFile, env)
+                    }
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(caddyStatusMessage = "Failed to synchronize Caddy proxy: ${e.message}")
+                }
+            }
+        }
     }
 
     fun dismissDeployDialog() {
@@ -488,7 +532,12 @@ class MainViewModel(
         }
 
         reloadCaddyProxy()
-        appendDeployLog("[PROXY] [5/5] Proxy running on port $allocatedPort (http://localhost:$allocatedPort)")
+        if (packageManager.isBinaryInstalled("caddy")) {
+            val safePath = finalName.lowercase().replace("[^a-z0-9_-]".toRegex(), "")
+            appendDeployLog("[PROXY] [5/5] Caddy proxy active at http://localhost:8080/$safePath (internal port $allocatedPort)")
+        } else {
+            appendDeployLog("[PROXY] [5/5] Caddy reverse proxy not installed. Access directly via http://localhost:$allocatedPort. Install Caddy from Runtimes tab for reverse proxy.")
+        }
         updateStepStatus(5, DeployStepStatus.COMPLETED)
 
         appendDeployLog("[OK] DEPLOYMENT COMPLETED: Project is live and running.")
@@ -651,6 +700,15 @@ class MainViewModel(
 
     fun clearPackageError() {
         _uiState.update { it.copy(packageErrorMessage = null) }
+    }
+
+    fun dismissCaddyNotice() {
+        _uiState.update { it.copy(caddyStatusMessage = null) }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        CaddyManager.stopCaddyProcess(managedCaddyProcess)
     }
 
     fun getDeviceAbi(): String = packageManager.detectDeviceAbi()

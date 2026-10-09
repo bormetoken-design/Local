@@ -133,7 +133,18 @@ fun MainApp(
                     onStart = { viewModel.startProject(selected.id) },
                     onStop = { viewModel.stopProject(selected.id) },
                     onRestart = { viewModel.restartProject(selected.id) },
-                    onOpenWeb = {},
+                    onOpenWeb = {
+                        val url = if (state.runtimePackages.any { it.id == "caddy" && it.isInstalled }) {
+                            val safePath = selected.name.lowercase().replace("[^a-z0-9_-]".toRegex(), "")
+                            "http://localhost:8080/$safePath"
+                        } else {
+                            "http://localhost:${selected.config.port}"
+                        }
+                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        runCatching { context.startActivity(intent) }
+                    },
                     onClearLogs = { viewModel.clearLogs(selected.id) },
                     onSaveEnv = { viewModel.saveEnv(selected.id, it) },
                     onDeleteProject = { viewModel.deleteProject(selected.id) }
@@ -170,11 +181,24 @@ fun MainApp(
                     MainTab.PROJECTS -> ProjectsScreen(
                         projects = state.projects,
                         healthScore = state.healthReport.score,
+                        caddyStatusMessage = state.caddyStatusMessage,
+                        onDismissCaddyNotice = { viewModel.dismissCaddyNotice() },
                         onProjectClick = { viewModel.selectProject(it) },
                         onStartProject = { viewModel.startProject(it) },
                         onStopProject = { viewModel.stopProject(it) },
                         onRestartProject = { viewModel.restartProject(it) },
-                        onOpenWeb = {},
+                        onOpenWeb = { proj ->
+                            val url = if (state.runtimePackages.any { it.id == "caddy" && it.isInstalled }) {
+                                val safePath = proj.name.lowercase().replace("[^a-z0-9_-]".toRegex(), "")
+                                "http://localhost:8080/$safePath"
+                            } else {
+                                "http://localhost:${proj.config.port}"
+                            }
+                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            runCatching { context.startActivity(intent) }
+                        },
                         onViewLogs = { viewModel.selectProject(it) },
                         onAddProjectClick = { isWizardOpen = true },
                         onUploadZipClick = onOpenZipPicker,
