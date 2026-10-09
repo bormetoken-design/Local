@@ -17,6 +17,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Upgrade
 import androidx.compose.material3.Button
@@ -24,6 +26,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -49,6 +52,8 @@ fun RuntimesScreen(
     onInstallPackage: (RuntimePackage) -> Unit,
     onUninstallPackage: (RuntimePackage) -> Unit,
     onUpdatePackage: (RuntimePackage) -> Unit,
+    onInstallFromFile: () -> Unit = {},
+    onRefreshIndex: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -62,7 +67,7 @@ fun RuntimesScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = "Runtime Packages",
                     fontSize = 24.sp,
@@ -73,6 +78,21 @@ fun RuntimesScreen(
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 )
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onRefreshIndex) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Refresh Packages")
+                }
+                Spacer(modifier = Modifier.width(4.dp))
+                OutlinedButton(
+                    onClick = onInstallFromFile,
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Install from File", fontSize = 12.sp)
+                }
             }
         }
 

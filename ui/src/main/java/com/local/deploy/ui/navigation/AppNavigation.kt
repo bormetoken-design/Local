@@ -71,6 +71,14 @@ fun MainApp(
         }
     }
 
+    val archivePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            viewModel.installPackageFromFile(context, uri)
+        }
+    }
+
     val onOpenZipPicker: () -> Unit = {
         zipPickerLauncher.launch(
             arrayOf(
@@ -84,6 +92,18 @@ fun MainApp(
 
     val onOpenFolderPicker: () -> Unit = {
         folderPickerLauncher.launch(null)
+    }
+
+    val onOpenArchivePicker: () -> Unit = {
+        archivePickerLauncher.launch(
+            arrayOf(
+                "application/gzip",
+                "application/x-gzip",
+                "application/x-tar",
+                "application/octet-stream",
+                "*/*"
+            )
+        )
     }
 
     LocalDeployTheme {
@@ -171,6 +191,8 @@ fun MainApp(
                         onInstallPackage = { viewModel.installRuntimePackage(it) },
                         onUninstallPackage = {},
                         onUpdatePackage = {},
+                        onInstallFromFile = onOpenArchivePicker,
+                        onRefreshIndex = { viewModel.loadRuntimePackages() },
                         modifier = Modifier.padding(paddingValues)
                     )
 
@@ -183,6 +205,8 @@ fun MainApp(
                     MainTab.SETTINGS -> SettingsScreen(
                         discordWebhookUrl = state.discordWebhookUrl,
                         onSaveWebhookUrl = {},
+                        runtimeIndexUrl = state.runtimeIndexUrl,
+                        onSaveRuntimeIndexUrl = { viewModel.setRuntimeIndexUrl(it) },
                         isBiometricLockEnabled = state.isBiometricEnabled,
                         onToggleBiometric = {},
                         isAutoBackupEnabled = state.isAutoBackupEnabled,

@@ -39,14 +39,17 @@ import com.local.deploy.ui.theme.PrimaryBlue
 fun SettingsScreen(
     discordWebhookUrl: String,
     onSaveWebhookUrl: (String) -> Unit,
+    runtimeIndexUrl: String = "https://raw.githubusercontent.com/bormetoken-design/Local/main/packages/index.json",
+    onSaveRuntimeIndexUrl: (String) -> Unit = {},
     isBiometricLockEnabled: Boolean,
     onToggleBiometric: (Boolean) -> Unit,
     isAutoBackupEnabled: Boolean,
     onToggleAutoBackup: (Boolean) -> Unit,
-    appVersion: String = "1.0.1",
+    appVersion: String = "1.0.5",
     modifier: Modifier = Modifier
 ) {
     var webhookInput by remember(discordWebhookUrl) { mutableStateOf(discordWebhookUrl) }
+    var indexUrlInput by remember(runtimeIndexUrl) { mutableStateOf(runtimeIndexUrl) }
 
     Column(
         modifier = modifier
@@ -88,6 +91,40 @@ fun SettingsScreen(
                         onSaveWebhookUrl(it)
                     },
                     label = { Text("Discord Webhook URL") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Runtime Package Repository Index URL
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Info, contentDescription = null, tint = PrimaryBlue)
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text("Runtime Index URL / Path", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Configure custom index.json URL or file path for downloading runtimes.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = indexUrlInput,
+                    onValueChange = {
+                        indexUrlInput = it
+                        onSaveRuntimeIndexUrl(it)
+                    },
+                    label = { Text("index.json URL or local path") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )

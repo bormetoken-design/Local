@@ -16,6 +16,7 @@ import com.local.deploy.model.RuntimePackage
 import com.local.deploy.model.RuntimeType
 import com.local.deploy.model.SystemHealthReport
 import com.local.deploy.packages.PackageManager
+import com.local.deploy.packages.PackageIndexRepository
 import com.local.deploy.projects.detector.DetectionResult
 import com.local.deploy.projects.detector.ProjectDetector
 import com.local.deploy.projects.env.EnvManager
@@ -62,7 +63,8 @@ data class MainUiState(
     val isBiometricEnabled: Boolean = false,
     val isAutoBackupEnabled: Boolean = false,
     val activeDetectionResult: DetectionResult? = null,
-    val autoDeployState: AutoDeployState = AutoDeployState()
+    val autoDeployState: AutoDeployState = AutoDeployState(),
+    val runtimeIndexUrl: String = PackageIndexRepository.DEFAULT_INDEX_URL
 )
 
 class MainViewModel(
@@ -72,7 +74,9 @@ class MainViewModel(
     private val packageManager: PackageManager
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(MainUiState())
+    private val packageIndexRepository = PackageIndexRepository(filesDir, packageManager)
+
+    private val _uiState = MutableStateFlow(MainUiState(runtimeIndexUrl = packageIndexRepository.getIndexUrl()))
     val uiState: StateFlow<MainUiState> = combine(
         _uiState,
         processSupervisor.projects,
@@ -97,71 +101,40 @@ class MainViewModel(
         }
     }
 
-    private fun loadRuntimePackages() {
-        val abi = packageManager.detectDeviceAbi()
-        val defaultPackages = listOf(
-            RuntimePackage(
-                id = "nodejs",
-                name = "Node.js (LTS)",
-                type = RuntimeType.NODEJS,
-                version = "20.14.0",
-                abi = abi,
-                sizeBytes = 38L * 1024 * 1024,
-                sha256 = "",
-                downloadUrl = "",
-                isInstalled = packageManager.isBinaryInstalled("node"),
-                installedVersion = packageManager.getBinaryVersion("node")
-            ),
-            RuntimePackage(
-                id = "python",
-                name = "Python 3.11",
-                type = RuntimeType.PYTHON,
-                version = "3.11.9",
-                abi = abi,
-                sizeBytes = 42L * 1024 * 1024,
-                sha256 = "",
-                downloadUrl = "",
-                isInstalled = packageManager.isBinaryInstalled("python3"),
-                installedVersion = packageManager.getBinaryVersion("python3")
-            ),
-            RuntimePackage(
-                id = "php",
-                name = "PHP 8.2 (CLI + FPM)",
-                type = RuntimeType.PHP,
-                version = "8.2.18",
-                abi = abi,
-                sizeBytes = 25L * 1024 * 1024,
-                sha256 = "",
-                downloadUrl = "",
-                isInstalled = packageManager.isBinaryInstalled("php"),
-                installedVersion = packageManager.getBinaryVersion("php")
-            ),
-            RuntimePackage(
-                id = "caddy",
-                name = "Caddy Reverse Proxy",
-                type = RuntimeType.CADDY,
-                version = "2.8.4",
-                abi = abi,
-                sizeBytes = 18L * 1024 * 1024,
-                sha256 = "",
-                downloadUrl = "",
-                isInstalled = packageManager.isBinaryInstalled("caddy"),
-                installedVersion = packageManager.getBinaryVersion("caddy")
-            ),
-            RuntimePackage(
-                id = "mariadb",
-                name = "MariaDB Server",
-                type = RuntimeType.MARIADB,
-                version = "10.11.6",
-                abi = abi,
-                sizeBytes = 65L * 1024 * 1024,
-                sha256 = "",
-                downloadUrl = "",
-                isInstalled = packageManager.isBinaryInstalled("mariadbd"),
-                installedVersion = packageManager.getBinaryVersion("mariadbd")
-            )
-        )
-        _uiState.value = _uiState.value.copy(runtimePackages = defaultPackages)
+    fun loadRuntimePackages() {
+        viewModelScope.launch {
+            val list = packageIndexRepository.loadPackages(_uiState.value.runtimeIndexUrl)
+            _uiState.update { it.copy(runtimePackages = list) }
+        }
+    }
+
+    fun setRuntimeIndexUrl(url: String) {
+        packageIndexRepository.setIndexUrl(url)
+        _uiState.update { it.copy(runtimeIndexUrl = url) }
+        loadRuntimePackages()
+    }
+
+    fun installPackageFromFile(context: Context, uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val fileName = SafImportHelper.getDisplayName(context, uri)
+            _uiState.update { it.copy(isInstallingPackageId = "local_file", installProgressPercent = 10) }
+            try {
+                val tempArchive = File(packageManager.cacheDir, "manual_${System.currentTimeMillis()}_$fileName")
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    tempArchive.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                packageManager.installPackageArchive(tempArchive, null) { ip ->
+                    _uiState.update { it.copy(installProgressPercent = ip.progressPercent) }
+                }
+                tempArchive.delete()
+                loadRuntimePackages()
+            } catch (_: Exception) {
+            } finally {
+                _uiState.update { it.copy(isInstallingPackageId = null, installProgressPercent = 0) }
+            }
+        }
     }
 
     fun startProject(projectId: String) {

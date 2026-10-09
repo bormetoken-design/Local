@@ -6,18 +6,21 @@ package com.local.deploy.model
 data class RuntimePackage(
     val id: String,
     val name: String,
-    val type: RuntimeType,
+    val type: RuntimeType = RuntimeType.CUSTOM,
     val version: String,
     val abi: String, // e.g. aarch64, x86_64
     val sizeBytes: Long,
     val sha256: String,
     val downloadUrl: String,
-    val dependencies: List<String> = emptyList(),
+    val provides: List<String> = emptyList(),
+    val requires: List<String> = emptyList(),
+    val dependencies: List<String> = requires,
     val isInstalled: Boolean = false,
     val installedVersion: String? = null,
     val binaryPath: String? = null,
     val isUpdateAvailable: Boolean = false
 ) {
+    val url: String get() = downloadUrl
     val sizeFormatted: String
         get() = String.format("%.1f MB", sizeBytes / (1024.0 * 1024.0))
 }
