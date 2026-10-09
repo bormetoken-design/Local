@@ -1,4 +1,4 @@
-package com.local.deploy
+package com.alphanew.deploy
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -32,7 +32,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             MainApp(
                 viewModel = viewModel,
-                appVersion = com.alphanew.deploy.BuildConfig.VERSION_NAME
+                appVersion = BuildConfig.VERSION_NAME
             )
         }
     }

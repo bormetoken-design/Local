@@ -1,4 +1,4 @@
-package com.local.deploy
+package com.alphanew.deploy
 
 import android.app.Application
 import android.app.NotificationChannel
@@ -10,7 +10,7 @@ import android.util.Log
 import com.local.deploy.database.JsonFileProjectRepository
 import com.local.deploy.database.ProjectRepository
 import com.local.deploy.packages.PackageManager
-import com.local.deploy.service.SupervisorService
+import com.alphanew.deploy.service.SupervisorService
 import com.local.deploy.supervisor.ProcessSupervisor
 import java.io.File
 

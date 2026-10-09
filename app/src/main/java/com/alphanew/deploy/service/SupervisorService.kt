@@ -1,4 +1,4 @@
-package com.local.deploy.service
+package com.alphanew.deploy.service
 
 import android.app.Notification
 import android.app.PendingIntent
@@ -10,8 +10,8 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import com.local.deploy.LocalApplication
-import com.local.deploy.MainActivity
+import com.alphanew.deploy.LocalApplication
+import com.alphanew.deploy.MainActivity
 import com.alphanew.deploy.R
 
 class SupervisorService : Service() {
@@ -47,7 +47,6 @@ class SupervisorService : Service() {
                 }
                 updateNotification("All services stopped")
             } else {
-                // Refresh notification
                 startForeground(NOTIFICATION_ID, buildNotification("ALPHA NEW is running"))
             }
         } catch (e: Exception) {
@@ -109,7 +108,7 @@ class SupervisorService : Service() {
                 "AlphaNew::SupervisorWakeLock"
             )?.apply {
                 setReferenceCounted(false)
-                acquire(10 * 60 * 1000L) // 10 min safe timeout interval or renewed
+                acquire(10 * 60 * 1000L)
             }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to acquire WakeLock: ${e.message}")

@@ -1,11 +1,11 @@
-package com.local.deploy.receiver
+package com.alphanew.deploy.receiver
 
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import com.local.deploy.LocalApplication
-import com.local.deploy.service.SupervisorService
+import com.alphanew.deploy.LocalApplication
+import com.alphanew.deploy.service.SupervisorService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -24,14 +24,13 @@ class BootReceiver : BroadcastReceiver() {
                 context.startService(serviceIntent)
             }
 
-            // Stagger start projects configured for autostart
             val app = context.applicationContext as? LocalApplication ?: return
             CoroutineScope(Dispatchers.IO).launch {
-                delay(3000L) // Wait for system to stabilize
+                delay(3000L)
                 val autostartProjects = app.projectRepository.getAutostartProjects()
                 autostartProjects.forEach { proj ->
                     app.processSupervisor.startProject(proj.id)
-                    delay(2000L) // Stagger 2 seconds between project boots
+                    delay(2000L)
                 }
             }
         }
