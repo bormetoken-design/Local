@@ -39,6 +39,7 @@ enum class MainTab(val label: String, val icon: ImageVector) {
 @Composable
 fun MainApp(
     viewModel: MainViewModel,
+    appVersion: String = "1.0.1",
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -134,6 +135,7 @@ fun MainApp(
                         onToggleBiometric = {},
                         isAutoBackupEnabled = state.isAutoBackupEnabled,
                         onToggleAutoBackup = {},
+                        appVersion = appVersion,
                         modifier = Modifier.padding(paddingValues)
                     )
                 }

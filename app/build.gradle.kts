@@ -1,8 +1,26 @@
+import java.util.Properties
+import java.io.FileInputStream
+import java.io.FileOutputStream
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.compose.compiler)
 }
+
+val versionPropsFile = rootProject.file("version.properties")
+val versionProps = Properties().apply {
+    if (versionPropsFile.exists()) {
+        FileInputStream(versionPropsFile).use { load(it) }
+    }
+}
+val vMajor = versionProps.getProperty("versionMajor", "1").toInt()
+val vMinor = versionProps.getProperty("versionMinor", "0").toInt()
+val vPatch = versionProps.getProperty("versionPatch", "1").toInt()
+val vBuild = versionProps.getProperty("versionBuild", "2").toInt()
+
+val currentVersionCode = vBuild
+val currentVersionName = "$vMajor.$vMinor.$vPatch"
 
 android {
     namespace = "com.alphanew.deploy"
@@ -12,8 +30,11 @@ android {
         applicationId = "com.alphanew.deploy"
         minSdk = 26
         targetSdk = 28
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = currentVersionCode
+        versionName = currentVersionName
+
+        buildConfigField("String", "VERSION_NAME", "\"$currentVersionName\"")
+        buildConfigField("int", "VERSION_CODE", "$currentVersionCode")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -41,6 +62,19 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
+    }
+}
+
+// Gradle task to bump version patch and build code automatically
+tasks.register("bumpVersion") {
+    doLast {
+        val nextPatch = vPatch + 1
+        val nextBuild = vBuild + 1
+        versionProps.setProperty("versionPatch", nextPatch.toString())
+        versionProps.setProperty("versionBuild", nextBuild.toString())
+        FileOutputStream(versionPropsFile).use { versionProps.store(it, "Updated by bumpVersion task") }
+        println("BUMPED VERSION to $vMajor.$vMinor.$nextPatch (Build $nextBuild)")
     }
 }
 

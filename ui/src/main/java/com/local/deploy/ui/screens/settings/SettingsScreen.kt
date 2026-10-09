@@ -43,6 +43,7 @@ fun SettingsScreen(
     onToggleBiometric: (Boolean) -> Unit,
     isAutoBackupEnabled: Boolean,
     onToggleAutoBackup: (Boolean) -> Unit,
+    appVersion: String = "1.0.1",
     modifier: Modifier = Modifier
 ) {
     var webhookInput by remember(discordWebhookUrl) { mutableStateOf(discordWebhookUrl) }
@@ -157,7 +158,7 @@ fun SettingsScreen(
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "ALPHA NEW v1.0.0\nPM2 + cPanel for Android (targetSdk 28)\nNative sandbox execution without root.",
+                    text = "ALPHA NEW v$appVersion\nPM2 + cPanel for Android (targetSdk 28)\nNative sandbox execution without root.",
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                     lineHeight = 20.sp

@@ -30,7 +30,10 @@ class MainActivity : ComponentActivity() {
         val viewModel = ViewModelProvider(this, viewModelFactory)[MainViewModel::class.java]
 
         setContent {
-            MainApp(viewModel = viewModel)
+            MainApp(
+                viewModel = viewModel,
+                appVersion = com.alphanew.deploy.BuildConfig.VERSION_NAME
+            )
         }
     }
 
