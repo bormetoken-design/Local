@@ -34,15 +34,16 @@ class LocalApplication : Application() {
         super.onCreate()
         instance = this
 
+        // Guaranteed initialization of core repositories
+        val dbDir = File(filesDir, "db").apply { mkdirs() }
+        projectRepository = JsonFileProjectRepository(dbDir)
+        packageManager = PackageManager(filesDir)
+        processSupervisor = ProcessSupervisor(filesDir)
+
         try {
             createNotificationChannel()
-
-            val dbDir = File(filesDir, "db")
-            projectRepository = JsonFileProjectRepository(dbDir)
-            packageManager = PackageManager(filesDir)
-            processSupervisor = ProcessSupervisor(filesDir)
         } catch (e: Exception) {
-            Log.e(TAG, "Initialization error", e)
+            Log.e(TAG, "Notification channel error", e)
         }
     }
 
