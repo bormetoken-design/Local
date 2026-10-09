@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.util.Log
 import com.local.deploy.database.JsonFileProjectRepository
 import com.local.deploy.database.ProjectRepository
 import com.local.deploy.packages.PackageManager
@@ -16,7 +17,8 @@ import java.io.File
 class LocalApplication : Application() {
 
     companion object {
-        const val CHANNEL_ID = "local_deploy_service_channel"
+        const val CHANNEL_ID = "alpha_new_service_channel"
+        private const val TAG = "LocalApplication"
         lateinit var instance: LocalApplication
             private set
     }
@@ -32,19 +34,32 @@ class LocalApplication : Application() {
         super.onCreate()
         instance = this
 
-        createNotificationChannel()
+        try {
+            createNotificationChannel()
 
-        val dbDir = File(filesDir, "db")
-        projectRepository = JsonFileProjectRepository(dbDir)
-        packageManager = PackageManager(filesDir)
-        processSupervisor = ProcessSupervisor(filesDir)
+            val dbDir = File(filesDir, "db")
+            projectRepository = JsonFileProjectRepository(dbDir)
+            packageManager = PackageManager(filesDir)
+            processSupervisor = ProcessSupervisor(filesDir)
+        } catch (e: Exception) {
+            Log.e(TAG, "Initialization error", e)
+        }
+    }
 
-        // Start background supervisor service
-        val serviceIntent = Intent(this, SupervisorService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(serviceIntent)
-        } else {
-            startService(serviceIntent)
+    /**
+     * Starts the supervisor foreground service safely from an active Activity context.
+     * Prevents ForegroundServiceStartNotAllowedException on Android 12+.
+     */
+    fun startSupervisorServiceSafely() {
+        try {
+            val serviceIntent = Intent(this, SupervisorService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent)
+            } else {
+                startService(serviceIntent)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not start supervisor service: ${e.message}")
         }
     }
 
@@ -56,9 +71,10 @@ class LocalApplication : Application() {
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "ALPHA NEW background process supervisor"
+                setShowBadge(false)
             }
-            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            manager.createNotificationChannel(channel)
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            manager?.createNotificationChannel(channel)
         }
     }
 }

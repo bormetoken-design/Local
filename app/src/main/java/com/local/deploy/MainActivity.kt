@@ -33,4 +33,10 @@ class MainActivity : ComponentActivity() {
             MainApp(viewModel = viewModel)
         }
     }
+
+    override fun onStart() {
+        super.onStart()
+        // Safely start supervisor service now that the Activity is actively in foreground
+        (application as? LocalApplication)?.startSupervisorServiceSafely()
+    }
 }
